@@ -1,0 +1,285 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>recipe8</title>
+  <style>
+    :root{--accent:#ff6b6b;--bg:#0f1720;--card:#0b1220;--muted:#9aa4b2}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{background:linear-gradient(180deg,#071126, #0b1725);color:#e6eef6;padding:12px}header{display:flex;gap:8px;align-items:center;justify-content:space-between}
+header h1{font-size:18px;margin:0}
+.controls{display:flex;gap:8px;align-items:center}
+.btn{background:var(--accent);border:none;color:white;padding:8px 10px;border-radius:10px;font-weight:600;cursor:pointer}
+.btn.secondary{background:transparent;border:1px solid rgba(255,255,255,0.08)}
+input[type=search]{padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit}
+
+main{margin-top:12px}
+.list{display:flex;flex-direction:column;gap:8px}
+.card{background:rgba(255,255,255,0.03);padding:10px;border-radius:12px;overflow:hidden}
+.card-row{display:flex;gap:8px;align-items:center}
+.thumb{width:64px;height:64px;border-radius:8px;background:#06111a;flex:0 0 64px;object-fit:cover}
+.title{font-size:16px;font-weight:700}
+.muted{color:var(--muted);font-size:13px}
+.actions{margin-left:auto;display:flex;gap:6px}
+
+details{background:transparent;border-radius:8px;padding:6px}
+summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px}
+
+.modal{position:fixed;inset:0;background:linear-gradient(180deg,rgba(2,6,23,0.6),rgba(2,6,23,0.9));display:none;align-items:flex-end;padding:12px}
+.sheet{background:linear-gradient(180deg,#081226,#071022);width:100%;max-height:92%;border-radius:14px;padding:12px;overflow:auto}
+form{display:flex;flex-direction:column;gap:10px}
+label{font-size:13px;color:var(--muted)}
+input,textarea,select{padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;width:100%}
+textarea{min-height:110px;resize:vertical}
+.small{font-size:13px;color:var(--muted)}
+.row{display:flex;gap:8px}
+.grow{flex:1}
+
+.ingredient-list{display:flex;flex-direction:column;gap:6px}
+.chip{display:flex;gap:8px;align-items:center;padding:6px;border-radius:8px;background:rgba(255,255,255,0.02)}
+
+footer.note{margin-top:12px;color:var(--muted);font-size:12px;text-align:center}
+
+@media(min-width:700px){body{padding:24px}header h1{font-size:22px}}
+
+  </style>
+</head>
+<body>
+  <header>
+    <h1>recipe8</h1>
+    <div class="controls">
+      <input id="search" type="search" placeholder="Search recipes..." />
+      <button class="btn" id="addBtn">+ Add</button>
+      <button class="btn secondary" id="exportBtn">Export</button>
+      <input type="file" id="importFile" style="display:none" accept="application/json" />
+      <button class="btn secondary" id="importBtn">Import</button>
+    </div>
+  </header>  <main>
+    <div id="list" class="list" aria-live="polite"></div>
+    <p id="empty" class="muted" style="margin-top:12px;display:none">No recipes yet — tap Add to create one.</p>
+  </main>  <div id="modal" class="modal" role="dialog" aria-modal="true">
+    <div class="sheet">
+      <form id="recipeForm">
+        <input type="hidden" id="index" value="-1" />
+        <label>Recipe Title</label>
+        <input id="title" required /><label>Image (optional)</label>
+    <input id="imageFile" type="file" accept="image/*" />
+    <img id="preview" class="thumb" style="display:none;margin-top:6px" />
+
+    <label>Ingredients</label>
+    <div class="ingredient-list" id="ingredientList"></div>
+    <div class="row">
+      <input id="newIng" placeholder="e.g. 2 eggs" class="grow" />
+      <button id="addIng" class="btn secondary" type="button">Add</button>
+    </div>
+
+    <label>Procedure</label>
+    <textarea id="procedure" placeholder="Step-by-step..." required></textarea>
+
+    <label>Video URL (YouTube works best)</label>
+    <input id="video" placeholder="https://youtube.com/..." />
+
+    <div class="row">
+      <button class="btn" type="submit">Save</button>
+      <button id="cancel" type="button" class="btn secondary">Cancel</button>
+    </div>
+  </form>
+</div>
+
+  </div>  <p class="note muted">Saved in your browser (localStorage). Use Export/Import to move recipes between devices.</p>  <script>
+    const STORAGE_KEY = 'recipes_v1';
+    let recipes = [];
+
+    const listEl = document.getElementById('list');
+    const emptyEl = document.getElementById('empty');
+    const addBtn = document.getElementById('addBtn');
+    const modal = document.getElementById('modal');
+    const form = document.getElementById('recipeForm');
+    const indexInput = document.getElementById('index');
+    const titleInput = document.getElementById('title');
+    const procedureInput = document.getElementById('procedure');
+    const videoInput = document.getElementById('video');
+    const imageFile = document.getElementById('imageFile');
+    const preview = document.getElementById('preview');
+    const ingredientListEl = document.getElementById('ingredientList');
+    const newIng = document.getElementById('newIng');
+    const addIngBtn = document.getElementById('addIng');
+    const search = document.getElementById('search');
+    const exportBtn = document.getElementById('exportBtn');
+    const importBtn = document.getElementById('importBtn');
+    const importFile = document.getElementById('importFile');
+
+    function loadRecipes(){
+      try{
+        const raw = localStorage.getItem(STORAGE_KEY);
+        recipes = raw ? JSON.parse(raw) : [];
+      }catch(e){ recipes = []; }
+    }
+
+    function saveRecipes(){
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(recipes));
+      renderList();
+    }
+
+    function clearListNode(node){ while(node.firstChild) node.removeChild(node.firstChild); }
+
+    function renderList(){
+      clearListNode(listEl);
+      const q = search.value.trim().toLowerCase();
+      const filtered = recipes.filter(r => r.title.toLowerCase().includes(q) || r.procedure.toLowerCase().includes(q) || r.ingredients.join(' ').toLowerCase().includes(q));
+      emptyEl.style.display = filtered.length===0 ? 'block':'none';
+
+      filtered.forEach((r, idx) =>{
+        const card = document.createElement('div'); card.className='card';
+        const details = document.createElement('details');
+        const summary = document.createElement('summary');
+        summary.innerHTML = `<img src="${r.image||''}" class="thumb" onerror="this.style.display='none'"/> <div style=\"display:flex;flex-direction:column;\"><div class=\"title\">${escapeHtml(r.title)}</div></div>`;
+
+        const inner = document.createElement('div');
+        inner.style.marginTop='8px';
+        inner.innerHTML = `<div class=\"muted\">Procedure</div><div style=\"white-space:pre-wrap;margin-top:6px;\">${escapeHtml(r.procedure)}</div>`;
+
+        const ingBlock = document.createElement('div'); ingBlock.style.marginTop='8px';
+        ingBlock.innerHTML = '<div class="muted">Ingredients</div>';
+        const ul = document.createElement('div'); ul.style.marginTop='6px';
+        r.ingredients.forEach(it=>{ const d=document.createElement('div'); d.className='chip'; d.textContent=it; ul.appendChild(d)});
+        ingBlock.appendChild(ul);
+
+        if(r.video){
+          const embed = document.createElement('div'); embed.style.marginTop='8px';
+          const id = youtubeID(r.video);
+          if(id){
+            embed.innerHTML = `<div class=\"muted\">Video</div><iframe width=\"100%\" height=\"200\" src=\"https://www.youtube.com/embed/${id}\" frameborder=\"0\" allowfullscreen style=\"border-radius:6px;\"></iframe>`;
+          } else {
+            embed.innerHTML = `<div class=\"muted\">Video link</div><a href=\"${escapeAttr(r.video)}\" target=\"_blank\">Open video</a>`;
+          }
+          inner.appendChild(embed);
+        }
+
+        const actions = document.createElement('div'); actions.className='actions';
+        const editBtn = document.createElement('button'); editBtn.className='btn secondary'; editBtn.textContent='Edit';
+        editBtn.addEventListener('click', (e)=>{ e.preventDefault(); openForm(idx); });
+        const delBtn = document.createElement('button'); delBtn.className='btn secondary'; delBtn.textContent='Delete';
+        delBtn.addEventListener('click', (e)=>{ e.preventDefault(); if(confirm('Delete this recipe?')){ recipes.splice(idx,1); saveRecipes(); }});
+        actions.appendChild(editBtn); actions.appendChild(delBtn);
+
+        details.appendChild(summary);
+        details.appendChild(inner);
+        details.appendChild(ingBlock);
+        details.appendChild(actions);
+        card.appendChild(details);
+        listEl.appendChild(card);
+      });
+    }
+
+    function openForm(i=-1){
+      resetForm();
+      if(i>=0){
+        const r = recipes[i];
+        indexInput.value = i;
+        titleInput.value = r.title;
+        procedureInput.value = r.procedure;
+        videoInput.value = r.video||'';
+        if(r.image){ preview.src = r.image; preview.style.display='block'; }
+        r.ingredients.forEach(it=> addIngredientToDOM(it));
+      } else { indexInput.value = -1; }
+      modal.style.display='flex';
+    }
+
+    function closeForm(){ modal.style.display='none'; }
+
+    function resetForm(){ form.reset(); indexInput.value='-1'; preview.style.display='none'; clearListNode(ingredientListEl); }
+
+    function addIngredientToDOM(text){
+      const el = document.createElement('div'); el.className='chip';
+      const span = document.createElement('span'); span.textContent = text;
+      const btn = document.createElement('button'); btn.textContent='×'; btn.className='btn secondary'; btn.style.marginLeft='auto'; btn.style.padding='6px 8px';
+      btn.addEventListener('click', ()=>{ ingredientListEl.removeChild(el); });
+      el.appendChild(span); el.appendChild(btn);
+      ingredientListEl.appendChild(el);
+    }
+
+    addIngBtn.addEventListener('click', ()=>{ const v = newIng.value.trim(); if(!v) return; addIngredientToDOM(v); newIng.value=''; });
+
+    imageFile.addEventListener('change', (e)=>{
+      const f = e.target.files[0]; if(!f) return; const reader = new FileReader();
+      reader.onload = ()=>{
+        // compress by drawing to canvas
+        const img = new Image();
+        img.onload = ()=>{
+          const canvas = document.createElement('canvas');
+          const scale = 300/img.width; // max 300px wide
+          canvas.width = 300;
+          canvas.height = img.height*scale;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img,0,0,canvas.width,canvas.height);
+          preview.src = canvas.toDataURL('image/jpeg',0.7);
+          preview.style.display='block';
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(f);
+    });
+
+    form.addEventListener('submit', (e)=>{
+      e.preventDefault();
+      const i = parseInt(indexInput.value,10);
+      const title = titleInput.value.trim();
+      const procedure = procedureInput.value.trim();
+      const video = videoInput.value.trim();
+      const image = preview.src && preview.style.display!=='none' ? preview.src : '';
+      const ingredients = Array.from(ingredientListEl.querySelectorAll('.chip span')).map(s=>s.textContent.trim()).filter(Boolean);
+
+      if(!title || !procedure){ alert('Title and procedure are required.'); return; }
+
+      const payload = { title, procedure, ingredients, video, image };
+      if(i>=0){ recipes[i] = payload; } else { recipes.push(payload); }
+      saveRecipes();
+      closeForm();
+    });
+
+    document.getElementById('cancel').addEventListener('click', ()=>{ closeForm(); });
+    addBtn.addEventListener('click', ()=> openForm(-1));
+    search.addEventListener('input', renderList);
+
+    function youtubeID(url){
+      try{
+        const u = new URL(url);
+        if(u.hostname.includes('youtube') || u.hostname.includes('youtu.be')){
+          if(u.hostname.includes('youtu.be')) return u.pathname.slice(1);
+          if(u.searchParams.get('v')) return u.searchParams.get('v');
+          const p = u.pathname.split('/'); return p[p.length-1];
+        }
+      }catch(e){}
+      return null;
+    }
+
+    function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function escapeAttr(s){ return String(s).replace(/"/g,'&quot;'); }
+
+    exportBtn.addEventListener('click', ()=>{
+      const blob = new Blob([JSON.stringify(recipes)], {type:'application/json'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'recipes.json';
+      a.click();
+    });
+
+    importBtn.addEventListener('click', ()=> importFile.click());
+    importFile.addEventListener('change', (e)=>{
+      const f = e.target.files[0]; if(!f) return;
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        try{ recipes = JSON.parse(reader.result); saveRecipes(); }
+        catch(err){ alert('Invalid file'); }
+      };
+      reader.readAsText(f);
+    });
+
+    loadRecipes();
+    renderList();
+    modal.addEventListener('click', (e)=>{ if(e.target===modal) closeForm(); });
+    window._recipes = recipes;
+  </script></body>
+</html>
